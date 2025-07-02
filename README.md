@@ -1,6 +1,6 @@
 # irc_tracker
 
-``` bash
+``` terminal
 $ ./irc_tracker -h
 Usage: ./irc_tracker [-f executable_file] [-p password] [-h]
 
