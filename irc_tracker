@@ -1,0 +1,98 @@
+#!/bin/bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SESSION="irc_check"
+TMUX_SOCKET="irc_tmux_$$"
+FLOW_NAME="flow_$$"
+IRCD_NAME="ircd_$$"
+IRSSI_WINDOW_NUM="0.1"
+IRSSI_SPLIT="-h"
+
+INPUT_FILE_NAME=""
+IRC_SERVER_FILE=""
+PASSWORD=""
+
+del_container()
+{
+    docker container stop $IRCD_NAME > /dev/null 2>&1
+    docker container rm $IRCD_NAME > /dev/null 2>&1
+    docker container stop $FLOW_NAME > /dev/null 2>&1
+    docker container rm $FLOW_NAME > /dev/null 2>&1
+    tmux -L $TMUX_SOCKET kill-session -t $SESSION > /dev/null 2>&1
+}
+
+while :; do
+    PORT=$(shuf -i 1024-65535 -n 1)  # 1024~65535 중 임의의 포트 선택
+    # 사용 중인 포트가 아니면 break
+    if ! netstat -lnt | grep -q ":$PORT "; then
+        break
+    fi
+done
+
+while getopts "f:p:h" opt; do
+    case $opt in
+        f)
+            INPUT_FILE_NAME="$OPTARG"
+            if [[ "$INPUT_FILE_NAME" != /* && "$INPUT_FILE_NAME" != ./* && "$INPUT_FILE_NAME" != ../* ]]; then
+                IRC_SERVER_FILE="./$INPUT_FILE_NAME"
+            else
+                IRC_SERVER_FILE="$INPUT_FILE_NAME"
+            fi
+            ;;
+        p)
+            PASSWORD="$OPTARG"
+            ;;
+        h)
+            echo "Usage: $0 [-f executable_file] [-p password] [-h]"
+            echo ""
+            echo "  -f FILE      Path to the IRC server executable (default: Docker-based InspIRCd server)"
+            echo "  -p PASSWORD  IRC server connection password (default: None; ignored if -f is not specified)"
+            echo "  -h           Show this help message "
+            echo ""
+            echo "ex:"
+            echo "  ./irc_tracker"
+            echo "  ./irc_tracker -f ./ircserv"
+            echo "  ./irc_tracker -f ./ircserv -p <PASSWORD>"
+            exit 0
+            ;;
+        ?)
+            exit 1
+    esac
+done
+
+if [ ! -f "$IRC_SERVER_FILE" ]; then
+    echo "not found file: $INPUT_FILE_NAME"
+    exit 1
+fi
+
+del_container
+if [ -z "$IRC_SERVER_FILE" ]; then
+    docker run -d --name $IRCD_NAME -p $PORT:6667 inspircd/inspircd-docker > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "docker run faild"
+        del_container
+        exit 1
+    fi
+    while ! docker exec $IRCD_NAME netstat -lnt | grep -q ":6667"; do
+        sleep 0.5
+    done
+fi
+
+tmux -L $TMUX_SOCKET -f "$SCRIPT_DIR/tmux.conf" new-session -d -s $SESSION
+tmux -L $TMUX_SOCKET send-keys -t $SESSION:0 " docker run --name $FLOW_NAME --rm --net=host appropriate/tcpflow -i lo -c port $PORT" C-m
+
+if [ -n "$IRC_SERVER_FILE" ]; then
+    IRSSI_WINDOW_NUM="0.2"
+    IRSSI_SPLIT="-v"
+    
+    tmux -L $TMUX_SOCKET split-window -h -t $SESSION:0
+    tmux -L $TMUX_SOCKET send-keys -t $SESSION:0.1 " $IRC_SERVER_FILE $PORT \"$PASSWORD\"" C-m
+    sleep 1
+fi
+
+tmux -L $TMUX_SOCKET split-window $IRSSI_SPLIT -t $SESSION:0
+tmux -L $TMUX_SOCKET send-keys -t $SESSION:$IRSSI_WINDOW_NUM " irssi -c 127.0.0.1 -p $PORT" C-m
+
+tmux -L $TMUX_SOCKET attach-session -t $SESSION
+ 
+del_container
