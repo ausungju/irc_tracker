@@ -22,8 +22,7 @@ del_container()
 }
 
 while :; do
-    PORT=$(shuf -i 1024-65535 -n 1)  # 1024~65535 중 임의의 포트 선택
-    # 사용 중인 포트가 아니면 break
+    PORT=$(shuf -i 1024-65535 -n 1)
     if ! netstat -lnt | grep -q ":$PORT "; then
         break
     fi
