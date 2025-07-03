@@ -16,6 +16,7 @@ del_container()
 {
     docker container stop $IRCD_NAME > /dev/null 2>&1
     docker container rm $IRCD_NAME > /dev/null 2>&1
+    
     docker container stop $FLOW_NAME > /dev/null 2>&1
     docker container rm $FLOW_NAME > /dev/null 2>&1
     tmux -L $TMUX_SOCKET kill-session -t $SESSION > /dev/null 2>&1
@@ -59,7 +60,7 @@ while getopts "f:p:h" opt; do
     esac
 done
 
-if [ ! -f "$IRC_SERVER_FILE" ]; then
+if [ "$IRC_SERVER_FILE" ] && [ ! -f "$IRC_SERVER_FILE" ]; then
     echo "not found file: $INPUT_FILE_NAME"
     exit 1
 fi
@@ -79,6 +80,9 @@ fi
 
 tmux -L $TMUX_SOCKET -f "$SCRIPT_DIR/tmux.conf" new-session -d -s $SESSION
 tmux -L $TMUX_SOCKET send-keys -t $SESSION:0 " docker run --name $FLOW_NAME --rm --net=host appropriate/tcpflow -i lo -c port $PORT" C-m
+while ! docker container list | grep -q $FLOW_NAME ; do
+        sleep 0.5
+done 
 
 if [ -n "$IRC_SERVER_FILE" ]; then
     IRSSI_WINDOW_NUM="0.2"
